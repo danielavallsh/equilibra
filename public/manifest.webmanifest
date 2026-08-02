@@ -1,5 +1,0 @@
-{
-  "name":"Equilibra","short_name":"Equilibra","description":"Tu alimentación, entrenamiento y progreso en un solo lugar.",
-  "start_url":"./","scope":"./","display":"standalone","background_color":"#f7f3ea","theme_color":"#9caf88",
-  "icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
-}
