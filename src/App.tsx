@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type View = "hoy" | "plan" | "compra" | "entreno" | "progreso" | "ajustes";
 type Meal = { id:string; type:string; name:string; kcal:number; protein:number; prep:string; ingredients:{name:string;qty:number;unit:string;price:number}[] };
-type DayMeal = { mealId:string; servings:number; quantities?:Record<string,number>; enabled?:boolean; outside:boolean; label?:string; kcal?:number; protein?:number; carbs?:number; fat?:number };
+type DayMeal = { mealId:string; servings?:number; quantities?:Record<string,number>; manualQuantities?:boolean; enabled?:boolean; outside:boolean; label?:string; kcal?:number; protein?:number; carbs?:number; fat?:number };
 type Exercise = { name:string; sets:number; reps:string; unit:string; defaultWeight:number; instructions:string };
 type Workout = { id:string; name:string; kind:"pump"|"strength"|"rest"; duration:number; exercises:Exercise[] };
 type Session = { id:string; date:string; workoutId:string; entries:Record<string,{weight:string;reps:string}>; completed:boolean };
 type Measurement = { id:string; date:string; weight:number; fat?:number; muscle?:number; bone?:number; water?:number };
 type Settings = { name:string; weeklyBudget:number; monthlyBudget:number; calorieGoal:number; proteinGoal:number; carbGoal:number; fatGoal:number; restSeconds:number; dark:boolean };
-type AppData = { mealChoices:Record<string,string>; dayMeals:Record<string,Record<string,DayMeal>>; freeMeals:string[]; unavailable:string[]; scheduleOverrides:Record<string,string>; shoppingChecked:string[]; pantryItems:string[]; itemPrices:Record<string,number>; extraItems:string[]; sessions:Session[]; measurements:Measurement[]; settings:Settings; streakDates:string[] };
+type AppData = { schemaVersion:number; mealChoices:Record<string,string>; dayMeals:Record<string,Record<string,DayMeal>>; freeMeals:string[]; unavailable:string[]; scheduleOverrides:Record<string,string>; shoppingChecked:string[]; pantryItems:string[]; pantryQty:Record<string,number>; itemPrices:Record<string,number>; extraItems:string[]; sessions:Session[]; measurements:Measurement[]; settings:Settings; streakDates:string[]; nutritionClosedDates:string[]; goalNotice:string };
 
 const mealOptions:Record<string,Meal[]> = {
  breakfast:[
@@ -78,24 +78,33 @@ const schedule=["pump","rest","strengthA","rest","pump","strengthB","rest"];
 const slots=["breakfast","lunch","snack","dinner","dessert"];
 const optionalSlots=["snack","dessert"];
 const macroTable:Record<string,{carbs:number;fat:number}>={"breakfast-fixed":{carbs:27,fat:5},"breakfast-toast":{carbs:42,fat:10},"breakfast-yogurt":{carbs:48,fat:11},"lunch-chicken":{carbs:66,fat:15},"lunch-lentils":{carbs:63,fat:18},"lunch-salmon":{carbs:45,fat:27},"lunch-chickpea-tuna":{carbs:60,fat:13},"lunch-chicken-broccoli":{carbs:58,fat:14},"lunch-lentil-cold":{carbs:58,fat:15},"lunch-chicken-courgette":{carbs:69,fat:12},"dinner-omelette":{carbs:34,fat:18},"dinner-wrap":{carbs:44,fat:16},"dinner-hake":{carbs:36,fat:13},"dinner-tuna-egg":{carbs:12,fat:22},"dinner-hake-vegetables":{carbs:46,fat:11},"dinner-asparagus":{carbs:31,fat:23},"snack-yogurt":{carbs:27,fat:5},"snack-toast":{carbs:24,fat:7},"snack-alpro":{carbs:17,fat:4},"dessert-fruit":{carbs:21,fat:0},"dessert-yogurt":{carbs:8,fat:4},"dessert-cottage":{carbs:12,fat:5}};
-const defaults:AppData={mealChoices:{breakfast:"breakfast-toast",lunch:"lunch-chicken",snack:"snack-alpro",dinner:"dinner-omelette",dessert:"dessert-fruit"},dayMeals:{},freeMeals:[],unavailable:[],scheduleOverrides:{},shoppingChecked:[],pantryItems:[],itemPrices:{},extraItems:[],sessions:[],measurements:[],settings:{name:"",weeklyBudget:40,monthlyBudget:100,calorieGoal:1650,proteinGoal:105,carbGoal:190,fatGoal:55,restSeconds:90,dark:false},streakDates:[]};
+type Nutrients={kcal:number;protein:number;carbs:number;fat:number;base?:number};
+const nutritionDB:Record<string,Nutrients>={
+ "Pan integral":{kcal:247,protein:9,carbs:41,fat:4},"Pan de centeno":{kcal:250,protein:8.5,carbs:48,fat:3.3},"Tomate":{kcal:18,protein:.9,carbs:3.9,fat:.2},"Queso cottage":{kcal:98,protein:12,carbs:3.4,fat:4.3},"Pavo loncheado":{kcal:105,protein:19,carbs:2,fat:2},"Leche semidesnatada":{kcal:46,protein:3.2,carbs:4.8,fat:1.6},"Leche desnatada":{kcal:35,protein:3.4,carbs:5,fat:.1},"Café":{kcal:2,protein:.3,carbs:0,fat:0,base:1},
+ "Yogur griego natural":{kcal:73,protein:8.5,carbs:4,fat:2.5},"Yogur natural":{kcal:61,protein:3.5,carbs:4.7,fat:3.3},"Alpro lima-limón":{kcal:71,protein:4,carbs:8.3,fat:2.2},"Copos de avena":{kcal:370,protein:13,carbs:60,fat:7},"Plátano":{kcal:105,protein:1.3,carbs:27,fat:.4,base:1},"Manzanas":{kcal:80,protein:.3,carbs:21,fat:.2,base:1},"Almendras":{kcal:579,protein:21,carbs:22,fat:50},"Arándanos congelados":{kcal:57,protein:.7,carbs:14,fat:.3},
+ "Pechuga de pollo":{kcal:120,protein:23,carbs:0,fat:2.6},"Arroz":{kcal:360,protein:7,carbs:79,fat:.7},"Calabacín":{kcal:17,protein:1.2,carbs:3.1,fat:.3},"Pimiento rojo":{kcal:31,protein:1,carbs:6,fat:.3},"Pimiento":{kcal:31,protein:1,carbs:6,fat:.3},"Aceite de oliva":{kcal:884,protein:0,carbs:0,fat:100},"Lentejas cocidas":{kcal:116,protein:9,carbs:20,fat:.4},"Garbanzos cocidos":{kcal:139,protein:7.5,carbs:22.5,fat:2.3},"Huevos":{kcal:78,protein:6.3,carbs:.6,fat:5.3,base:1},"Claras":{kcal:46,protein:10.5,carbs:.7,fat:.2},"Espinacas":{kcal:23,protein:2.9,carbs:3.6,fat:.4},"Salmón":{kcal:208,protein:20,carbs:0,fat:13},"Patatas":{kcal:77,protein:2,carbs:17,fat:.1},"Mezcla de ensalada":{kcal:20,protein:1.5,carbs:3,fat:.2},"Cebolla":{kcal:40,protein:1.1,carbs:9.3,fat:.1},"Tortilla integral":{kcal:170,protein:5,carbs:29,fat:4,base:1},"Merluza":{kcal:86,protein:18,carbs:0,fat:1.5},"Merluza congelada":{kcal:86,protein:18,carbs:0,fat:1.5},"Zanahoria":{kcal:41,protein:.9,carbs:10,fat:.2},"Atún en lata":{kcal:116,protein:26,carbs:0,fat:1},"Brócoli":{kcal:34,protein:2.8,carbs:7,fat:.4},"Menestra congelada":{kcal:65,protein:3.5,carbs:10,fat:1},"Espárragos":{kcal:20,protein:2.2,carbs:3.9,fat:.1}
+};
+const defaults:AppData={schemaVersion:5,mealChoices:{breakfast:"breakfast-toast",lunch:"lunch-chicken",snack:"snack-alpro",dinner:"dinner-omelette",dessert:"dessert-fruit"},dayMeals:{},freeMeals:[],unavailable:[],scheduleOverrides:{},shoppingChecked:[],pantryItems:[],pantryQty:{},itemPrices:{},extraItems:[],sessions:[],measurements:[],settings:{name:"",weeklyBudget:40,monthlyBudget:100,calorieGoal:1650,proteinGoal:105,carbGoal:190,fatGoal:55,restSeconds:90,dark:false},streakDates:[],nutritionClosedDates:[],goalNotice:""};
 const iso=(d:Date)=>d.toISOString().slice(0,10);
 const localISO=(d=new Date())=>{const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return iso(x)};
 const uid=()=>crypto.randomUUID?.()||`${Date.now()}-${Math.random()}`;
 const money=(n:number)=>n.toLocaleString("es-ES",{style:"currency",currency:"EUR"});
-function load():AppData {try{const raw=JSON.parse(localStorage.getItem("equilibra-v2")||"null");return raw?{...defaults,...raw,settings:{...defaults.settings,...raw.settings}}:defaults}catch{return defaults}}
+function migrate(raw:Partial<AppData>|null):AppData{if(!raw)return structuredClone(defaults);const result={...structuredClone(defaults),...raw,settings:{...defaults.settings,...raw.settings},schemaVersion:5,pantryQty:{...(raw.pantryQty||{})},nutritionClosedDates:[...(raw.nutritionClosedDates||[])]};Object.entries(raw.dayMeals||{}).forEach(([date,day])=>{result.dayMeals[date]={};Object.entries(day||{}).forEach(([slot,e])=>{const meal=mealById(e.mealId)||mealOptions[slot]?.[0];if(!meal)return;const oldFactor=Number.isFinite(e.servings)?Number(e.servings):1;result.dayMeals[date][slot]={...e,servings:undefined,quantities:e.outside?e.quantities:Object.fromEntries(meal.ingredients.map(x=>[x.name,e.quantities?.[x.name]??Math.round(x.qty*oldFactor*100)/100]))}})});(raw.pantryItems||[]).forEach(name=>{if(result.pantryQty[name]==null)result.pantryQty[name]=999999});return result}
+function load():AppData {try{return migrate(JSON.parse(localStorage.getItem("equilibra-v2")||"null"))}catch{return structuredClone(defaults)}}
 const weeklyMeals:Record<string,string[]>={breakfast:Array(7).fill("breakfast-fixed"),lunch:["lunch-chickpea-tuna","lunch-chicken-broccoli","lunch-lentil-cold","lunch-chicken-courgette","lunch-chickpea-tuna","lunch-lentil-cold","lunch-chicken"],snack:["snack-alpro","snack-yogurt","snack-alpro","snack-toast","snack-alpro","snack-yogurt","snack-alpro"],dinner:["dinner-asparagus","dinner-tuna-egg","dinner-hake-vegetables","dinner-omelette","dinner-hake","dinner-wrap","dinner-tuna-egg"],dessert:["dessert-fruit","dessert-yogurt","dessert-cottage","dessert-fruit","dessert-yogurt","dessert-fruit","dessert-cottage"]};
 function weekday(date:string){return(new Date(`${date}T12:00`).getDay()+6)%7}
-function entryFor(data:AppData,date:string,slot:string):DayMeal{const saved=data.dayMeals[date]?.[slot];if(saved)return saved;const i=weekday(date),optional=optionalSlots.includes(slot);return{mealId:weeklyMeals[slot]?.[i]||data.mealChoices[slot]||mealOptions[slot][0].id,servings:1,enabled:slot==="snack"&&(i===0||i===4)?true:!optional,outside:false}}
+function entryFor(data:AppData,date:string,slot:string):DayMeal{const saved=data.dayMeals[date]?.[slot];if(saved)return saved;const i=weekday(date),optional=optionalSlots.includes(slot),mealId=weeklyMeals[slot]?.[i]||data.mealChoices[slot]||mealOptions[slot][0].id,m=mealById(mealId);return{mealId,quantities:Object.fromEntries(m.ingredients.map(x=>[x.name,x.qty])),enabled:slot==="snack"&&(i===0||i===4)?true:!optional,outside:false}}
 function enabled(entry:DayMeal,slot:string){return entry.enabled??!optionalSlots.includes(slot)}
 function mealById(id:string){return Object.values(mealOptions).flat().find(m=>m.id===id)!}
-function portion(entry:DayMeal,meal:Meal){if(!entry.quantities)return entry.servings;const ratios=meal.ingredients.map(x=>(entry.quantities?.[x.name]??x.qty*entry.servings)/x.qty);return ratios.reduce((a,b)=>a+b,0)/ratios.length}
-function macros(entry:DayMeal){if(entry.outside)return{kcal:entry.kcal||0,protein:entry.protein||0,carbs:entry.carbs||0,fat:entry.fat||0};const m=mealById(entry.mealId),factor=portion(entry,m);const extra=macroTable[m.id]||{carbs:0,fat:0};return{kcal:Math.round(m.kcal*factor),protein:Math.round(m.protein*factor),carbs:Math.round(extra.carbs*factor),fat:Math.round(extra.fat*factor)}}
+function ingredientQty(entry:DayMeal,x:Meal["ingredients"][number]){return Math.max(0,entry.quantities?.[x.name]??x.qty)}
+function macros(entry:DayMeal){if(entry.outside)return{kcal:entry.kcal||0,protein:entry.protein||0,carbs:entry.carbs||0,fat:entry.fat||0};const m=mealById(entry.mealId);const exact=m.ingredients.reduce((a,x)=>{const n=nutritionDB[x.name],factor=ingredientQty(entry,x)/(n?.base||100);return n?{kcal:a.kcal+n.kcal*factor,protein:a.protein+n.protein*factor,carbs:a.carbs+n.carbs*factor,fat:a.fat+n.fat*factor}:a},{kcal:0,protein:0,carbs:0,fat:0});return Object.fromEntries(Object.entries(exact).map(([k,v])=>[k,Math.round(v)])) as typeof exact}
 function daySummary(data:AppData,date:string){return slots.filter(s=>enabled(entryFor(data,date,s),s)).map(s=>macros(entryFor(data,date,s))).reduce((a,m)=>({kcal:a.kcal+m.kcal,protein:a.protein+m.protein,carbs:a.carbs+m.carbs,fat:a.fat+m.fat}),{kcal:0,protein:0,carbs:0,fat:0})}
-function mealPrice(entry:DayMeal){if(entry.outside)return 0;const meal=mealById(entry.mealId);return meal.ingredients.reduce((n,x)=>n+x.price,0)*entry.servings}
-function adaptWeek(data:AppData,settings:Settings){const next={...data.dayMeals};getWeek().forEach(d=>{const date=localISO(d),current=next[date]||{},planned:Record<string,DayMeal>={};slots.forEach(slot=>{const existing=current[slot],base=entryFor({...data,dayMeals:{}},date,slot);planned[slot]=existing?.outside?existing:{...base,enabled:existing?.enabled??base.enabled,quantities:undefined,servings:1}});if(settings.calorieGoal>=1500||settings.proteinGoal>=95)planned.snack.enabled=true;const active=slots.filter(s=>enabled(planned[s],s));const total=active.map(s=>macros(planned[s])).reduce((a,m)=>({kcal:a.kcal+m.kcal,protein:a.protein+m.protein}),{kcal:0,protein:0});const baseCost=active.reduce((n,s)=>n+mealPrice(planned[s]),0),budgetFactor=(settings.weeklyBudget/7)/Math.max(.01,baseCost);const goalFactor=Math.max(settings.calorieGoal/Math.max(1,total.kcal),settings.proteinGoal/Math.max(1,total.protein));const factor=Math.min(goalFactor,budgetFactor);active.forEach(slot=>{if(!planned[slot].outside)planned[slot].servings=Math.max(.65,Math.min(1.6,Math.round(factor*20)/20))});next[date]=planned});return next}
+function mealPrice(entry:DayMeal){if(entry.outside)return 0;const meal=mealById(entry.mealId);return meal.ingredients.reduce((n,x)=>n+x.price*(ingredientQty(entry,x)/x.qty),0)}
+function adaptWeek(data:AppData,settings:Settings){const next={...data.dayMeals};getWeek().forEach(d=>{const date=localISO(d),planned:Record<string,DayMeal>={};slots.forEach(slot=>{const existing=entryFor(data,date,slot),m=mealById(existing.mealId);planned[slot]={...existing,quantities:{...Object.fromEntries(m.ingredients.map(x=>[x.name,ingredientQty(existing,x)]))}}});if(settings.calorieGoal>=1700||settings.proteinGoal>=110)planned.snack.enabled=true;const adjustable=slots.filter(s=>enabled(planned[s],s)&&!planned[s].outside&&!planned[s].manualQuantities);const before=daySummary({...data,dayMeals:{...data.dayMeals,[date]:planned}},date);const factor=Math.max(.75,Math.min(1.35,settings.calorieGoal/Math.max(1,before.kcal)));adjustable.forEach(slot=>{const m=mealById(planned[slot].mealId);planned[slot].quantities=Object.fromEntries(m.ingredients.map(x=>[x.name,Math.max(x.unit==="ud"?1:5,Math.round(ingredientQty(planned[slot],x)*factor/(x.unit==="ud"?1:5))*(x.unit==="ud"?1:5))]))});const after=slots.filter(s=>enabled(planned[s],s)).map(s=>macros(planned[s])).reduce((a,m)=>({kcal:a.kcal+m.kcal,protein:a.protein+m.protein}),{kcal:0,protein:0});let deficit=Math.max(0,settings.proteinGoal-after.protein);for(const slot of ["lunch","dinner","breakfast"]){if(deficit<=1||!adjustable.includes(slot))continue;const m=mealById(planned[slot].mealId),best=[...m.ingredients].sort((a,b)=>(nutritionDB[b.name]?.protein||0)/(nutritionDB[b.name]?.base||100)-(nutritionDB[a.name]?.protein||0)/(nutritionDB[a.name]?.base||100))[0],n=nutritionDB[best.name];if(!n||n.protein<=0)continue;const add=Math.min(best.unit==="ud"?2:100,Math.ceil(deficit/n.protein*(n.base||100)/(best.unit==="ud"?1:5))*(best.unit==="ud"?1:5));planned[slot].quantities={...planned[slot].quantities,[best.name]:ingredientQty(planned[slot],best)+add};deficit-=add/(n.base||100)*n.protein}next[date]=planned});return next}
 
-const Icon=({name}:{name:string})=>{const p:Record<string,string>={hoy:"M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9 20v-6h6v6",plan:"M6 3v3m12-3v3M4 8h16v12H4z",compra:"M4 6h16l-2 14H6L4 6z",entreno:"M3 9v6m3-8v10m3-6h6m0-4v10m3-8v6",progreso:"M4 18l5-5 4 3 7-9m-5 0h5v5",ajustes:"M12 8a4 4 0 100 8 4 4 0 000-8zm0-5v2m0 14v2M3 12h2m14 0h2"};return <svg viewBox="0 0 24 24" aria-hidden="true"><path d={p[name]}/></svg>};
+const Icon=({name}:{name:string})=>{const p:Record<string,string>={hoy:"M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9 20v-6h6v6",plan:"M6 3v3m12-3v3M4 8h16v12H4z",compra:"M4 6h16l-2 14H6L4 6z",entreno:"M3 9v6m3-8v10m3-6h6m0-4v10m3-8v6",progreso:"M4 18l5-5 4 3 7-9m-5 0h5v5",ajustes:"M12 8a4 4 0 100 8 4 4 0 000-8zm0-5v2m0 14v2M3 12h2m14 0h2"};return <svg viewBox="0 0 24 24" aria-hidden="true">
+<path d={p[name]}/>
+</svg>};
 
 export default function App(){
  const [data,setData]=useState<AppData>(load); const [view,setView]=useState<View>("hoy"); const [editing,setEditing]=useState<{date:string;slot:string}|null>(null); const [toast,setToast]=useState("");
@@ -104,8 +113,27 @@ export default function App(){
  const now=new Date(); const hour=now.getHours(); const greeting=hour<13?"Buenos días":hour<20?"Buenas tardes":"Buenas noches";
  const dateText=new Intl.DateTimeFormat("es-ES",{weekday:"long",day:"numeric",month:"long"}).format(now);
  return <div className="app-shell">
-  <aside className="sidebar"><div className="brand"><span className="sprig">⌁</span>Equilibra</div><nav>{(["hoy","plan","compra","entreno","progreso","ajustes"] as View[]).map(v=><button key={v} onClick={()=>setView(v)} className={view===v?"active":""}><Icon name={v}/><span>{v[0].toUpperCase()+v.slice(1)}</span></button>)}</nav><div className="side-note"><b>Este mes</b><span>{data.sessions.filter(s=>s.completed&&s.date.slice(0,7)===localISO().slice(0,7)).length} entrenamientos completados</span></div></aside>
-  <main className="content"><header><div><p>{greeting}{data.settings.name?`, ${data.settings.name}`:""}</p><span>{dateText[0].toUpperCase()+dateText.slice(1)}</span></div><button className="avatar" onClick={()=>setView("ajustes")} aria-label="Abrir ajustes">{data.settings.name.slice(0,2).toUpperCase()||"EQ"}</button></header>
+  <aside className="sidebar">
+<div className="brand">
+<span className="sprig">⌁</span>Equilibra</div>
+<nav>{(["hoy","plan","compra","entreno","progreso","ajustes"] as View[]).map(v=>
+<button key={v} onClick={()=>setView(v)} className={view===v?"active":""}>
+<Icon name={v}/>
+<span>{v[0].toUpperCase()+v.slice(1)}</span>
+</button>)}</nav>
+<div className="side-note">
+<b>Este mes</b>
+<span>{data.sessions.filter(s=>s.completed&&s.date.slice(0,7)===localISO().slice(0,7)).length} entrenamientos completados</span>
+</div>
+</aside>
+  <main className="content">
+<header>
+<div>
+<p>{greeting}{data.settings.name?`, ${data.settings.name}`:""}</p>
+<span>{dateText[0].toUpperCase()+dateText.slice(1)}</span>
+</div>
+<button className="avatar" onClick={()=>setView("ajustes")} aria-label="Abrir ajustes">{data.settings.name.slice(0,2).toUpperCase()||"EQ"}</button>
+</header>
    {view==="hoy"&&<Today data={data} update={update} edit={(slot)=>setEditing({date:localISO(),slot})} goWorkout={()=>setView("entreno")}/>}
    {view==="plan"&&<Plan data={data} update={update} edit={(date,slot)=>setEditing({date,slot})}/>}
    {view==="compra"&&<Shopping data={data} update={update}/>}
@@ -117,40 +145,412 @@ export default function App(){
 }
 
 function Today({data,update,edit,goWorkout}:{data:AppData;update:(p:Partial<AppData>)=>void;edit:(slot:string)=>void;goWorkout:()=>void}){
- const today=localISO(),dow=(new Date().getDay()+6)%7;const week=getWeek();const resolved=resolvedWorkouts(data,week);const workout=workouts[resolved[dow]];const done=data.sessions.some(s=>s.date===today&&s.completed);const total=daySummary(data,today);const closed=data.streakDates.includes(today);
- return <section className="page"><div className="title-row"><div><small>HOY</small><h1>Tu día, en equilibrio</h1><p>Añade o quita merienda y postre según lo que realmente comas.</p></div><button className={closed?"secondary":"primary"} onClick={()=>update({streakDates:closed?data.streakDates.filter(x=>x!==today):[...new Set([...data.streakDates,today])]})}>{closed?"Reabrir día":"Cerrar el día"}</button></div><div className="macro-dashboard"><Macro label="Calorías" value={total.kcal} goal={data.settings.calorieGoal} unit="kcal"/><Macro label="Proteína" value={total.protein} goal={data.settings.proteinGoal} unit="g"/><Macro label="Carbohidratos" value={total.carbs} goal={data.settings.carbGoal} unit="g"/><Macro label="Grasas" value={total.fat} goal={data.settings.fatGoal} unit="g"/></div><div className="today-grid"><div className="meal-stack"><div className="section-head"><h2>Diario de comidas</h2><span>Pulsa para editar o activar</span></div>{slots.map((slot,i)=>{const entry=entryFor(data,today,slot),m=mealById(entry.mealId),mc=macros(entry),active=enabled(entry,slot);return <button className={`meal-card diary ${entry.outside?"outside":""} ${!active?"disabled-meal":""}`} key={slot} onClick={()=>edit(slot)}><div className={`meal-art art-${i%3}`}>{["☕","◒","◐","♨","◉"][i]}</div><div className="meal-copy"><small>{m.type}</small><h3>{active?(entry.outside?(entry.label||`${m.type} fuera`):m.name):`+ Añadir ${m.type.toLowerCase()}`}</h3><span>{active?(entry.outside?"Estimación editable · no entra en la compra":`${entry.servings} ración · cantidades × ${entry.servings}`):"No cuenta en macros ni en la compra"}</span></div>{active&&<div className="meal-macros"><b>{mc.kcal} kcal</b><span>P {mc.protein} · C {mc.carbs} · G {mc.fat}</span></div>}</button>})}</div><div className="right-col"><article className="workout-card"><div><small>ENTRENAMIENTO DE HOY</small><h2>{workout.name}</h2><p>{workout.duration} min · {done?"Completado":"Pendiente"}</p><button onClick={goWorkout}>{done?"Ver historial":"Abrir entrenamiento"} →</button></div><div className="barbell">●━●</div></article><article className="tip"><span>Balance flexible</span><p>Comer fuera sigue contando en tus macros, pero no añade ingredientes a la compra. Las comidas desactivadas no cuentan en ninguno.</p></article></div></div></section>
+ const today=localISO(),dow=(new Date().getDay()+6)%7;const week=getWeek();const resolved=resolvedWorkouts(data,week);const workout=workouts[resolved[dow]];const done=data.sessions.some(s=>s.date===today&&s.completed);const total=daySummary(data,today);const closed=data.nutritionClosedDates.includes(today);
+ return <section className="page">
+<div className="title-row">
+<div>
+<small>HOY</small>
+<h1>Tu día, en equilibrio</h1>
+<p>Añade o quita merienda y postre según lo que realmente comas.</p>
+</div>
+<button className={closed?"secondary":"primary"} onClick={()=>update({nutritionClosedDates:closed?data.nutritionClosedDates.filter(x=>x!==today):[...new Set([...data.nutritionClosedDates,today])]})}>{closed?"Reabrir día":"Cerrar el día"}</button>
+</div>
+<div className="macro-dashboard">
+<Macro label="Calorías" value={total.kcal} goal={data.settings.calorieGoal} unit="kcal"/>
+<Macro label="Proteína" value={total.protein} goal={data.settings.proteinGoal} unit="g"/>
+<Macro label="Carbohidratos" value={total.carbs} goal={data.settings.carbGoal} unit="g"/>
+<Macro label="Grasas" value={total.fat} goal={data.settings.fatGoal} unit="g"/>
+</div>
+<div className="today-grid">
+<div className="meal-stack">
+<div className="section-head">
+<h2>Diario de comidas</h2>
+<span>Pulsa para editar o activar</span>
+</div>{slots.map((slot,i)=>{const entry=entryFor(data,today,slot),m=mealById(entry.mealId),mc=macros(entry),active=enabled(entry,slot);return <button className={`meal-card diary ${entry.outside?"outside":""} ${!active?"disabled-meal":""}`} key={slot} onClick={()=>edit(slot)}>
+<div className={`meal-art art-${i%3}`}>{["☕","◒","◐","♨","◉"][i]}</div>
+<div className="meal-copy">
+<small>{m.type}</small>
+<h3>{active?(entry.outside?(entry.label||`${m.type} fuera`):m.name):`+ Añadir ${m.type.toLowerCase()}`}</h3>
+<span>{active?(entry.outside?"Estimación editable · no entra en la compra":"Cantidades de ingredientes editables"):"No cuenta en macros ni en la compra"}</span>
+</div>{active&&<div className="meal-macros">
+<b>{mc.kcal} kcal</b>
+<span>P {mc.protein} · C {mc.carbs} · G {mc.fat}</span>
+</div>}</button>})}</div>
+<div className="right-col">
+<article className="workout-card">
+<div>
+<small>ENTRENAMIENTO DE HOY</small>
+<h2>{workout.name}</h2>
+<p>{workout.duration} min · {done?"Completado":"Pendiente"}</p>
+<button onClick={goWorkout}>{done?"Ver historial":"Abrir entrenamiento"} →</button>
+</div>
+<div className="barbell">●━●</div>
+</article>
+<article className="tip">
+<span>Balance flexible</span>
+<p>Comer fuera sigue contando en tus macros, pero no añade ingredientes a la compra. Las comidas desactivadas no cuentan en ninguno.</p>
+</article>
+</div>
+</div>
+</section>
 }
-function Macro({label,value,goal,unit}:{label:string;value:number;goal:number;unit:string}){const pct=Math.min(100,value/goal*100);return <article className="macro-card"><small>{label}</small><b>{value} <i>{unit}</i></b><span>de {goal} {unit}</span><div><i style={{width:`${pct}%`}}/></div></article>}
-function Metric({label,value,total,pct}:{label:string;value:string;total:string;pct:number}){return <article className="metric"><small>{label}</small><div className="ring" style={{"--pct":`${Math.min(100,pct)*3.6}deg`} as React.CSSProperties}><span>{value}<i>/ {total}</i></span></div></article>}
+function Macro({label,value,goal,unit}:{label:string;value:number;goal:number;unit:string}){const pct=Math.min(100,value/goal*100);return <article className="macro-card">
+<small>{label}</small>
+<b>{value} <i>{unit}</i>
+</b>
+<span>de {goal} {unit}</span>
+<div>
+<i style={{width:`${pct}%`}}/>
+</div>
+</article>}
+function Metric({label,value,total,pct}:{label:string;value:string;total:string;pct:number}){return <article className="metric">
+<small>{label}</small>
+<div className="ring" style={{"--pct":`${Math.min(100,pct)*3.6}deg`} as React.CSSProperties}>
+<span>{value}<i>/ {total}</i>
+</span>
+</div>
+</article>}
 function getWeek(offset=0){const d=new Date();const diff=(d.getDay()+6)%7;d.setDate(d.getDate()-diff+offset*7);return Array.from({length:7},(_,i)=>{const x=new Date(d);x.setDate(d.getDate()+i);return x})}
-function resolvedWorkouts(data:AppData,days:Date[]){const ids=days.map((d,i)=>data.scheduleOverrides[localISO(d)]||schedule[i]);days.forEach((d,i)=>{const key=localISO(d);if(!data.unavailable.includes(key))return;const displaced=ids[i];ids[i]="rest";if(displaced==="rest")return;for(let j=i+1;j<ids.length;j++){const candidate=localISO(days[j]);if(!data.unavailable.includes(candidate)&&ids[j]==="rest"&&ids[j-1]==="rest"&&(j===ids.length-1||ids[j+1]==="rest")){ids[j]=displaced;break}}});return ids}
+function resolvedWorkouts(data:AppData,days:Date[]){const requested=days.map((d,i)=>({id:data.scheduleOverrides[localISO(d)]||schedule[i],at:i})).filter(x=>x.id!=="rest");const result=Array(7).fill("rest"),free=days.map((d,i)=>!data.unavailable.includes(localISO(d))?i:-1).filter(i=>i>=0);requested.sort((a,b)=>({strengthA:3,pump:2,strengthB:1}[b.id]||0)-({strengthA:3,pump:2,strengthB:1}[a.id]||0)).forEach(x=>{const choices=free.filter(i=>result[i]==="rest"&&(i===0||result[i-1]==="rest")&&(i===6||result[i+1]==="rest")).sort((a,b)=>Math.abs(a-x.at)-Math.abs(b-x.at));if(choices.length)result[choices[0]]=x.id});return result}
 
 function Plan({data,update,edit}:{data:AppData;update:(p:Partial<AppData>)=>void;edit:(date:string,slot:string)=>void}){
  const [weekOffset,setWeekOffset]=useState(0);const days=getWeek(weekOffset);const resolved=resolvedWorkouts(data,days);
- return <section className="page wide"><div className="title-row"><div><small>PLAN SEMANAL</small><h1>Comidas y entrenamientos</h1><p>El menú varía durante la semana y respeta el presupuesto configurado.</p></div><div className="week-nav"><button onClick={()=>setWeekOffset(x=>x-1)}>←</button><button onClick={()=>setWeekOffset(0)}>Semana actual</button><button onClick={()=>setWeekOffset(x=>x+1)}>→</button></div></div><div className="week-planner">{days.map((d,i)=>{const key=localISO(d),blocked=data.unavailable.includes(key),workout=workouts[resolved[i]],sum=daySummary(data,key);return <article className={`planner-day ${key===localISO()?"today":""}`} key={key}><header><div><b>{new Intl.DateTimeFormat("es-ES",{weekday:"long"}).format(d)}</b><span>{d.getDate()}</span></div><small>{sum.kcal} kcal · {sum.protein} g P</small></header><div className="planner-meals">{slots.map(slot=>{const e=entryFor(data,key,slot),m=mealById(e.mealId),active=enabled(e,slot);return <button key={slot} className={`${e.outside?"outside":""} ${!active?"disabled-meal":""}`} onClick={()=>edit(key,slot)}><small>{m.type}</small><b>{active?(e.outside?(e.label||"Fuera"):m.name):`+ Añadir ${m.type.toLowerCase()}`}</b><span>{active?(e.outside?"🍴 Fuera":`${e.servings} ración`):"Opcional"}</span></button>})}</div><div className="planner-workout"><small>ENTRENAMIENTO</small><select value={data.scheduleOverrides[key]||schedule[i]} disabled={blocked} onChange={e=>update({scheduleOverrides:{...data.scheduleOverrides,[key]:e.target.value}})}><option value="pump">BodyPump</option><option value="strengthA">Fuerza A</option><option value="strengthB">Fuerza B</option><option value="rest">Descanso activo</option></select>{workout.id!==data.scheduleOverrides[key]&&blocked&&<span>Reubicado automáticamente</span>}<label><input type="checkbox" checked={blocked} onChange={()=>update({unavailable:blocked?data.unavailable.filter(x=>x!==key):[...data.unavailable,key]})}/> No puedo entrenar</label></div></article>})}</div><div className="replan"><b>Reorganización activa</b><span>Si bloqueas un entrenamiento, Equilibra intenta colocarlo en el siguiente descanso compatible, evitando sesiones intensas consecutivas. Siempre puedes ajustar el resultado manualmente.</span></div></section>
+ return <section className="page wide">
+<div className="title-row">
+<div>
+<small>PLAN SEMANAL</small>
+<h1>Comidas y entrenamientos</h1>
+<p>El menú varía durante la semana y respeta el presupuesto configurado.</p>
+</div>
+<div className="week-nav">
+<button onClick={()=>setWeekOffset(x=>x-1)}>←</button>
+<button onClick={()=>setWeekOffset(0)}>Semana actual</button>
+<button onClick={()=>setWeekOffset(x=>x+1)}>→</button>
+</div>
+</div>
+<div className="week-planner">{days.map((d,i)=>{const key=localISO(d),blocked=data.unavailable.includes(key),workout=workouts[resolved[i]],sum=daySummary(data,key);return <article className={`planner-day ${key===localISO()?"today":""}`} key={key}>
+<header>
+<div>
+<b>{new Intl.DateTimeFormat("es-ES",{weekday:"long"}).format(d)}</b>
+<span>{d.getDate()}</span>
+</div>
+<small>{sum.kcal} kcal · {sum.protein} g P</small>
+</header>
+<div className="planner-meals">{slots.map(slot=>{const e=entryFor(data,key,slot),m=mealById(e.mealId),active=enabled(e,slot);return <button key={slot} className={`${e.outside?"outside":""} ${!active?"disabled-meal":""}`} onClick={()=>edit(key,slot)}>
+<small>{m.type}</small>
+<b>{active?(e.outside?(e.label||"Fuera"):m.name):`+ Añadir ${m.type.toLowerCase()}`}</b>
+<span>{active?(e.outside?"🍴 Fuera":`${macros(e).kcal} kcal`):"Opcional"}</span>
+</button>})}</div>
+<div className="planner-workout">
+<small>ENTRENAMIENTO</small>
+<select value={data.scheduleOverrides[key]||schedule[i]} disabled={blocked} onChange={e=>update({scheduleOverrides:{...data.scheduleOverrides,[key]:e.target.value}})}>
+<option value="pump">BodyPump</option>
+<option value="strengthA">Fuerza A</option>
+<option value="strengthB">Fuerza B</option>
+<option value="rest">Descanso activo</option>
+</select>{workout.id!==data.scheduleOverrides[key]&&blocked&&<span>Reubicado automáticamente</span>}<label>
+<input type="checkbox" checked={blocked} onChange={()=>update({unavailable:blocked?data.unavailable.filter(x=>x!==key):[...data.unavailable,key]})}/> No puedo entrenar</label>
+</div>
+</article>})}</div>
+<div className="replan">
+<b>Reorganización activa</b>
+<span>Si bloqueas un entrenamiento, Equilibra intenta colocarlo en el siguiente descanso compatible, evitando sesiones intensas consecutivas. Siempre puedes ajustar el resultado manualmente.</span>
+</div>
+</section>
 }
 function Shopping({data,update}:{data:AppData;update:(p:Partial<AppData>)=>void}){
- const [extra,setExtra]=useState("");const days=getWeek();const items=useMemo(()=>{const map=new Map<string,{qty:number;unit:string;price:number}>();days.forEach(d=>slots.forEach(slot=>{const e=entryFor(data,localISO(d),slot);if(!enabled(e,slot)||e.outside)return;const m=mealById(e.mealId);m.ingredients.forEach(x=>{const qty=e.quantities?.[x.name]??x.qty*e.servings,ratio=qty/x.qty,old=map.get(x.name);map.set(x.name,{qty:(old?.qty||0)+qty,unit:x.unit,price:(old?.price||0)+x.price*ratio})})}));return [...map].map(([name,x])=>({name,...x}))},[data.dayMeals,data.mealChoices]);const price=(name:string,fallback:number)=>data.itemPrices[name]??fallback;const fullTotal=items.reduce((n,x)=>n+price(x.name,x.price),0)+data.extraItems.reduce((n,x)=>n+price(x,0),0);const total=items.filter(x=>!data.pantryItems.includes(x.name)).reduce((n,x)=>n+price(x.name,x.price),0)+data.extraItems.filter(x=>!data.pantryItems.includes(x)).reduce((n,x)=>n+price(x,0),0);const outside=days.flatMap(d=>slots.map(s=>entryFor(data,localISO(d),s))).filter((e,i)=>enabled(e,slots[i%slots.length])&&e.outside).length;
- const toggle=(name:string)=>update({shoppingChecked:data.shoppingChecked.includes(name)?data.shoppingChecked.filter(x=>x!==name):[...data.shoppingChecked,name]});const pantry=(name:string)=>update({pantryItems:data.pantryItems.includes(name)?data.pantryItems.filter(x=>x!==name):[...data.pantryItems,name]});const changePrice=(name:string,value:number)=>update({itemPrices:{...data.itemPrices,[name]:value}});
- return <section className="page"><div className="title-row"><div><small>COMPRA SEMANAL · LIDL</small><h1>La compra de esta semana</h1><p>Los precios son estimaciones editables; excluye {outside} comidas fuera y lo que ya tienes.</p></div><div className="budget-pill"><b>{money(total)}</b><span>por comprar · ahorras {money(fullTotal-total)}</span></div></div>{total>data.settings.weeklyBudget&&<div className="warning"><b>Presupuesto superado</b><span>Corrige los precios según tu Lidl o revisa el menú semanal.</span></div>}<div className="shopping-summary"><span>Compra completa <b>{money(fullTotal)}</b></span><span>Ya tienes <b>{money(fullTotal-total)}</b></span><span>Presupuesto disponible <b>{money(Math.max(0,data.settings.weeklyBudget-total))}</b></span></div><div className="shopping-toolbar"><button onClick={()=>update({shoppingChecked:items.map(x=>x.name)})}>Marcar comprado</button><button onClick={()=>update({shoppingChecked:[],pantryItems:[]})}>Reiniciar estados</button><label><input type="text" value={extra} placeholder="Añadir producto" onChange={e=>setExtra(e.target.value)}/><button onClick={()=>{if(extra.trim()){update({extraItems:[...data.extraItems,extra.trim()]});setExtra("")}}}>Añadir</button></label></div><div className="shopping-grid dynamic"><article><h2>Menú semanal</h2><div className="shopping-head"><span>Producto</span><span>Lo tengo</span><span>Precio</span><span>Comprado</span></div>{items.map(x=>{const owned=data.pantryItems.includes(x.name);return <div className={`shopping-row ${owned?"owned":""}`} key={x.name}><span><b>{x.name}</b><small>{x.qty<10?x.qty.toFixed(1):x.qty.toFixed(0)} {x.unit}</small></span><label title="Ya está en mi despensa"><input type="checkbox" checked={owned} onChange={()=>pantry(x.name)}/></label><label className="price-input"><input type="number" min="0" step="0.01" value={price(x.name,x.price).toFixed(2)} onChange={e=>changePrice(x.name,Number(e.target.value))}/><span>€</span></label><label title="Ya lo he comprado"><input type="checkbox" checked={data.shoppingChecked.includes(x.name)} onChange={()=>toggle(x.name)}/></label></div>})}</article><article><h2>Extras</h2>{data.extraItems.length===0&&<p className="empty">No has añadido extras.</p>}{data.extraItems.map(x=><div className={`shopping-row extra ${data.pantryItems.includes(x)?"owned":""}`} key={x}><span><b>{x}</b></span><label><input type="checkbox" checked={data.pantryItems.includes(x)} onChange={()=>pantry(x)}/></label><label className="price-input"><input type="number" min="0" step="0.01" value={price(x,0).toFixed(2)} onChange={e=>changePrice(x,Number(e.target.value))}/><span>€</span></label><button className="remove" onClick={()=>update({extraItems:data.extraItems.filter(y=>y!==x)})}>×</button></div>)}</article></div></section>
+ const [extra,setExtra]=useState("");const days=getWeek();const items=useMemo(()=>{const map=new Map<string,{qty:number;unit:string;price:number}>();days.forEach(d=>slots.forEach(slot=>{const e=entryFor(data,localISO(d),slot);if(!enabled(e,slot)||e.outside)return;const m=mealById(e.mealId);m.ingredients.forEach(x=>{const qty=ingredientQty(e,x),ratio=qty/x.qty,old=map.get(x.name);map.set(x.name,{qty:(old?.qty||0)+qty,unit:x.unit,price:(old?.price||0)+x.price*ratio})})}));return [...map].map(([name,x])=>({name,...x}))},[data.dayMeals,data.mealChoices]);const price=(name:string,fallback:number)=>data.itemPrices[name]??fallback;const remaining=(x:{name:string;qty:number})=>Math.max(0,x.qty-(data.pantryQty[x.name]||0));const fullTotal=items.reduce((n,x)=>n+price(x.name,x.price),0)+data.extraItems.reduce((n,x)=>n+price(x,0),0);const total=items.reduce((n,x)=>n+price(x.name,x.price)*(remaining(x)/Math.max(1,x.qty)),0)+data.extraItems.filter(x=>!data.pantryItems.includes(x)).reduce((n,x)=>n+price(x,0),0);const outside=days.flatMap(d=>slots.map(s=>entryFor(data,localISO(d),s))).filter((e,i)=>enabled(e,slots[i%slots.length])&&e.outside).length;
+ const toggle=(name:string)=>update({shoppingChecked:data.shoppingChecked.includes(name)?data.shoppingChecked.filter(x=>x!==name):[...data.shoppingChecked,name]});const setPantry=(name:string,value:number)=>update({pantryQty:{...data.pantryQty,[name]:Math.max(0,value)}});const pantry=(name:string)=>update({pantryItems:data.pantryItems.includes(name)?data.pantryItems.filter(x=>x!==name):[...data.pantryItems,name]});const changePrice=(name:string,value:number)=>update({itemPrices:{...data.itemPrices,[name]:Math.max(0,value)}});
+ return <section className="page">
+<div className="title-row">
+<div>
+<small>COMPRA SEMANAL · LIDL</small>
+<h1>La compra de esta semana</h1>
+<p>Los precios son estimaciones editables; excluye {outside} comidas fuera y lo que ya tienes.</p>
+</div>
+<div className="budget-pill">
+<b>{money(total)}</b>
+<span>por comprar · ahorras {money(fullTotal-total)}</span>
+</div>
+</div>{total>data.settings.weeklyBudget&&<div className="warning">
+<b>Presupuesto superado</b>
+<span>Corrige los precios según tu Lidl o revisa el menú semanal.</span>
+</div>}<div className="shopping-summary">
+<span>Compra completa <b>{money(fullTotal)}</b>
+</span>
+<span>Ya tienes <b>{money(fullTotal-total)}</b>
+</span>
+<span>Presupuesto disponible <b>{money(Math.max(0,data.settings.weeklyBudget-total))}</b>
+</span>
+</div>
+<div className="shopping-toolbar">
+<button onClick={()=>update({shoppingChecked:items.map(x=>x.name)})}>Marcar comprado</button>
+<button onClick={()=>update({shoppingChecked:[],pantryItems:[],pantryQty:{}})}>Reiniciar estados</button>
+<label>
+<input type="text" value={extra} placeholder="Añadir producto" onChange={e=>setExtra(e.target.value)}/>
+<button onClick={()=>{if(extra.trim()){update({extraItems:[...data.extraItems,extra.trim()]});setExtra("")}}}>Añadir</button>
+</label>
+</div>
+<div className="shopping-grid dynamic">
+<article>
+<h2>Menú semanal</h2>
+<div className="shopping-head">
+<span>Producto</span>
+<span>Cantidad disponible</span>
+<span>Precio</span>
+<span>Comprado</span>
+</div>{items.map(x=>{const owned=remaining(x)===0;return <div className={`shopping-row ${owned?"owned":""}`} key={x.name}>
+<span>
+<b>{x.name}</b>
+<small>{x.qty<10?x.qty.toFixed(1):x.qty.toFixed(0)} {x.unit}</small>
+</span>
+<label className="price-input" title="Cantidad que ya tienes en casa">
+<input type="number" min="0" step={x.unit==="ud"?1:10} value={data.pantryQty[x.name]||0} onChange={e=>setPantry(x.name,Number(e.target.value))}/><span>{x.unit}</span>
+</label>
+<label className="price-input">
+<input type="number" min="0" step="0.01" value={price(x.name,x.price)} onChange={e=>changePrice(x.name,Number(e.target.value))}/>
+<span>€</span>
+</label>
+<label title="Ya lo he comprado">
+<input type="checkbox" checked={data.shoppingChecked.includes(x.name)} onChange={()=>toggle(x.name)}/>
+</label>
+</div>})}</article>
+<article>
+<h2>Extras</h2>{data.extraItems.length===0&&<p className="empty">No has añadido extras.</p>}{data.extraItems.map(x=>
+<div className={`shopping-row extra ${data.pantryItems.includes(x)?"owned":""}`} key={x}>
+<span>
+<b>{x}</b>
+</span>
+<label>
+<input type="checkbox" checked={data.pantryItems.includes(x)} onChange={()=>pantry(x)}/>
+</label>
+<label className="price-input">
+<input type="number" min="0" step="0.01" value={price(x,0).toFixed(2)} onChange={e=>changePrice(x,Number(e.target.value))}/>
+<span>€</span>
+</label>
+<button className="remove" onClick={()=>update({extraItems:data.extraItems.filter(y=>y!==x)})}>×</button>
+</div>)}</article>
+</div>
+</section>
 }
 
-function DayMealEditor({date,slot,data,update,close}:{date:string;slot:string;data:AppData;update:(p:Partial<AppData>)=>void;close:()=>void}){const original=entryFor(data,date,slot);const [entry,setEntry]=useState<DayMeal>({...original});const meal=mealById(entry.mealId);const active=enabled(entry,slot);const save=()=>{update({dayMeals:{...data.dayMeals,[date]:{...(data.dayMeals[date]||{}),[slot]:entry}}});close()};return <div className="overlay" onMouseDown={close}><div className="modal meal-editor" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={close}>×</button><small>{new Date(`${date}T12:00`).toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</small><h2>{meal.type}</h2>{!active?<div className="empty-state compact"><p>Esta comida no está incluida en el día.</p><button className="primary" onClick={()=>setEntry({...entry,enabled:true})}>+ Añadir {meal.type.toLowerCase()}</button></div>:<><div className="mode-tabs"><button className={!entry.outside?"active":""} onClick={()=>setEntry({...entry,outside:false})}>Comida del plan</button><button className={entry.outside?"active":""} onClick={()=>setEntry({...entry,outside:true,kcal:entry.kcal||meal.kcal,protein:entry.protein||meal.protein,carbs:entry.carbs||macroTable[meal.id].carbs,fat:entry.fat||macroTable[meal.id].fat})}>Como fuera</button></div>{!entry.outside?<><label className="field">Receta<select value={entry.mealId} onChange={e=>setEntry({...entry,mealId:e.target.value,quantities:undefined})}>{mealOptions[slot].map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><label className="field">Cantidad general / raciones<input type="number" min="0.25" max="4" step="0.25" value={entry.servings} onChange={e=>setEntry({...entry,servings:Number(e.target.value),quantities:undefined})}/></label><div className="ingredient-editor"><h3>Cantidades que vas a comer</h3>{meal.ingredients.map(x=><label key={x.name}><span>{x.name}</span><div><input type="number" min="0" step={x.unit==="ud"?1:5} value={entry.quantities?.[x.name]??Math.round(x.qty*entry.servings*100)/100} onChange={e=>setEntry({...entry,quantities:{...Object.fromEntries(meal.ingredients.map(y=>[y.name,entry.quantities?.[y.name]??y.qty*entry.servings])),[x.name]:Number(e.target.value)}})}/><b>{x.unit}</b></div></label>)}</div></>:<><label className="field">Descripción<input value={entry.label||""} placeholder="Ej. cena italiana" onChange={e=>setEntry({...entry,label:e.target.value})}/></label><p className="muted">Introduce una estimación. Se contará en tus macros, pero no añadirá ingredientes a la compra.</p><div className="macro-inputs">{(["kcal","protein","carbs","fat"] as const).map(k=><label key={k}>{({kcal:"Kcal",protein:"Proteína",carbs:"Carbohidratos",fat:"Grasas"})[k]}<input type="number" min="0" value={entry[k]||0} onChange={e=>setEntry({...entry,[k]:Number(e.target.value)})}/></label>)}</div></>}<div className="macro-preview">{Object.entries(macros(entry)).map(([k,v])=><span key={k}><b>{v}</b> {k}</span>)}</div><button className="secondary full remove-meal" onClick={()=>setEntry({...entry,enabled:false})}>Quitar esta comida del día</button></>}<button className="primary full" onClick={save}>Guardar en este día</button></div></div>}
+function DayMealEditor({date,slot,data,update,close}:{date:string;slot:string;data:AppData;update:(p:Partial<AppData>)=>void;close:()=>void}){const original=entryFor(data,date,slot);const [entry,setEntry]=useState<DayMeal>({...original});const meal=mealById(entry.mealId);const active=enabled(entry,slot);const save=()=>{update({dayMeals:{...data.dayMeals,[date]:{...(data.dayMeals[date]||{}),[slot]:entry}}});close()};return <div className="overlay" onMouseDown={close}>
+<div className="modal meal-editor" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}>
+<button className="close" onClick={close}>×</button>
+<small>{new Date(`${date}T12:00`).toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</small>
+<h2>{meal.type}</h2>{!active?<div className="empty-state compact">
+<p>Esta comida no está incluida en el día.</p>
+<button className="primary" onClick={()=>setEntry({...entry,enabled:true})}>+ Añadir {meal.type.toLowerCase()}</button>
+</div>:<>
+<div className="mode-tabs">
+<button className={!entry.outside?"active":""} onClick={()=>setEntry({...entry,outside:false})}>Comida del plan</button>
+<button className={entry.outside?"active":""} onClick={()=>setEntry({...entry,outside:true,kcal:entry.kcal||meal.kcal,protein:entry.protein||meal.protein,carbs:entry.carbs||macroTable[meal.id].carbs,fat:entry.fat||macroTable[meal.id].fat})}>Como fuera</button>
+</div>{!entry.outside?<>
+<label className="field">Receta<select value={entry.mealId} onChange={e=>setEntry({...entry,mealId:e.target.value,quantities:undefined})}>{mealOptions[slot].map(m=>
+<option key={m.id} value={m.id}>{m.name}</option>)}</select>
+</label>
+<div className="ingredient-editor">
+<h3>Cantidades que vas a comer</h3>{meal.ingredients.map(x=>
+<label key={x.name}>
+<span>{x.name}</span>
+<div>
+<input type="number" min="0" step={x.unit==="ud"?1:5} value={entry.quantities?.[x.name]??x.qty} onChange={e=>setEntry({...entry,manualQuantities:true,quantities:{...Object.fromEntries(meal.ingredients.map(y=>[y.name,entry.quantities?.[y.name]??y.qty])),[x.name]:Math.max(0,Number(e.target.value))}})}/>
+<b>{x.unit}</b>
+</div>
+</label>)}</div>
+</>:<>
+<label className="field">Descripción<input value={entry.label||""} placeholder="Ej. cena italiana" onChange={e=>setEntry({...entry,label:e.target.value})}/>
+</label>
+<p className="muted">Introduce una estimación. Se contará en tus macros, pero no añadirá ingredientes a la compra.</p>
+<div className="macro-inputs">{(["kcal","protein","carbs","fat"] as const).map(k=>
+<label key={k}>{({kcal:"Kcal",protein:"Proteína",carbs:"Carbohidratos",fat:"Grasas"})[k]}<input type="number" min="0" value={entry[k]||0} onChange={e=>setEntry({...entry,[k]:Number(e.target.value)})}/>
+</label>)}</div>
+</>}<div className="macro-preview">{Object.entries(macros(entry)).map(([k,v])=>
+<span key={k}>
+<b>{v}</b> {k}</span>)}</div>
+<button className="secondary full remove-meal" onClick={()=>setEntry({...entry,enabled:false})}>Quitar esta comida del día</button>
+</>}<button className="primary full" onClick={save}>Guardar en este día</button>
+</div>
+</div>}
 
 function Training({data,update,notify}:{data:AppData;update:(p:Partial<AppData>)=>void;notify:(s:string)=>void}){
  const [workoutId,setWorkoutId]=useState("strengthA");const workout=workouts[workoutId];const history=data.sessions.filter(s=>s.workoutId===workoutId&&s.completed);const last=history[history.length-1],previous=history[history.length-2];const [entries,setEntries]=useState<Record<string,{weight:string;reps:string}>>({});const [info,setInfo]=useState<Exercise|null>(null);
  useEffect(()=>setEntries(Object.fromEntries(workout.exercises.map(e=>[e.name,{weight:last?.entries[e.name]?.weight||String(e.defaultWeight),reps:last?.entries[e.name]?.reps||e.reps}]))),[workoutId]);
- const save=()=>{const session:Session={id:uid(),date:localISO(),workoutId,entries,completed:true};const dates=[...new Set([...data.streakDates,localISO()])];update({sessions:[...data.sessions,session],streakDates:dates});notify("Sesión guardada correctamente")};
- return <section className="page"><div className="title-row"><div><small>ENTRENAMIENTO</small><h1>{workout.name}</h1><p>{workout.duration} minutos · peso anterior y progreso visibles.</p></div><div className="workout-actions"><select value={workoutId} onChange={e=>setWorkoutId(e.target.value)}><option value="strengthA">Fuerza A</option><option value="strengthB">Fuerza B</option><option value="pump">BodyPump</option></select><button className="primary" onClick={save}>Finalizar y guardar</button></div></div>{workoutId==="pump"&&<div className="replan"><b>Registro BodyPump</b><span>Anota el peso total de discos utilizado en cada canción. Si la barra tiene peso relevante para ti, usa siempre el mismo criterio.</span></div>}<div className="workout-layout"><article className="exercise-list"><div className="table-head"><span>Ejercicio / canción</span><span>Trabajo</span><span>Peso de hoy</span></div>{workout.exercises.map((e,i)=>{const lastWeight=last?.entries[e.name]?.weight,previousWeight=previous?.entries[e.name]?.weight,delta=lastWeight&&previousWeight?Number(lastWeight)-Number(previousWeight):null;return <div className="exercise" key={e.name}><div><i>{i+1}</i><span><button className="exercise-name" onClick={()=>setInfo(e)}>{e.name} ⓘ</button><small>Última vez: {lastWeight||"—"} {e.unit}{delta!==null?` · ${delta>0?"+":""}${delta} kg`:""}</small></span></div><strong>{e.sets} × {e.reps}</strong><label><input type="number" step="0.5" min="0" value={entries[e.name]?.weight||""} onChange={ev=>setEntries({...entries,[e.name]:{...entries[e.name],weight:ev.target.value}})}/><span>{e.unit}</span></label></div>})}</article><aside className="session-side"><Timer initial={data.settings.restSeconds}/><div><small>PRÓXIMO OBJETIVO</small><h3>Progresión sencilla</h3><p>Sube peso solo cuando mantengas la técnica durante todas las repeticiones o la canción completa.</p></div><div><small>HISTORIAL</small><p><b>{history.length} sesiones</b> registradas</p>{last&&<p>Última: <b>{new Date(`${last.date}T12:00`).toLocaleDateString("es-ES")}</b></p>}</div></aside></div>{info&&<InfoModal exercise={info} close={()=>setInfo(null)}/>}</section>
+ const save=()=>{const session:Session={id:uid(),date:localISO(),workoutId,entries,completed:true};update({sessions:[...data.sessions,session]});notify("Sesión guardada correctamente")};
+ return <section className="page">
+<div className="title-row">
+<div>
+<small>ENTRENAMIENTO</small>
+<h1>{workout.name}</h1>
+<p>{workout.duration} minutos · peso anterior y progreso visibles.</p>
+</div>
+<div className="workout-actions">
+<select value={workoutId} onChange={e=>setWorkoutId(e.target.value)}>
+<option value="strengthA">Fuerza A</option>
+<option value="strengthB">Fuerza B</option>
+<option value="pump">BodyPump</option>
+</select>
+<button className="primary" onClick={save}>Finalizar y guardar</button>
+</div>
+</div>{workoutId==="pump"&&<div className="replan">
+<b>Registro BodyPump</b>
+<span>Anota el peso total de discos utilizado en cada canción. Si la barra tiene peso relevante para ti, usa siempre el mismo criterio.</span>
+</div>}<div className="workout-layout">
+<article className="exercise-list">
+<div className="table-head">
+<span>Ejercicio / canción</span>
+<span>Trabajo</span>
+<span>Peso de hoy</span>
+</div>{workout.exercises.map((e,i)=>{const lastWeight=last?.entries[e.name]?.weight,previousWeight=previous?.entries[e.name]?.weight,delta=lastWeight&&previousWeight?Number(lastWeight)-Number(previousWeight):null;return <div className="exercise" key={e.name}>
+<div>
+<i>{i+1}</i>
+<span>
+<button className="exercise-name" onClick={()=>setInfo(e)}>{e.name} ⓘ</button>
+<small>Última vez: {lastWeight||"—"} {e.unit}{delta!==null?` · ${delta>0?"+":""}${delta} kg`:""}</small>
+</span>
+</div>
+<label><span>{e.sets} ×</span><input aria-label={`Repeticiones de ${e.name}`} value={entries[e.name]?.reps||e.reps} onChange={ev=>setEntries({...entries,[e.name]:{...entries[e.name],reps:ev.target.value}})}/></label>
+<label>
+<input type="number" step="0.5" min="0" value={entries[e.name]?.weight||""} onChange={ev=>setEntries({...entries,[e.name]:{...entries[e.name],weight:ev.target.value}})}/>
+<span>{e.unit}</span>
+</label>
+</div>})}</article>
+<aside className="session-side">
+<Timer initial={data.settings.restSeconds}/>
+<div>
+<small>PRÓXIMO OBJETIVO</small>
+<h3>Progresión sencilla</h3>
+<p>Sube peso solo cuando mantengas la técnica durante todas las repeticiones o la canción completa.</p>
+</div>
+<div>
+<small>HISTORIAL</small>
+<p>
+<b>{history.length} sesiones</b> registradas</p>{last&&<p>Última: <b>{new Date(`${last.date}T12:00`).toLocaleDateString("es-ES")}</b>
+</p>}{[...history].reverse().slice(0,5).map(s=><p key={s.id}>{new Date(`${s.date}T12:00`).toLocaleDateString("es-ES")} <button className="remove" onClick={()=>update({sessions:data.sessions.filter(x=>x.id!==s.id)})}>Eliminar</button></p>)}</div>
+</aside>
+</div>{info&&<InfoModal exercise={info} close={()=>setInfo(null)}/>}</section>
 }
-function Timer({initial}:{initial:number}){const [seconds,setSeconds]=useState(initial);const [running,setRunning]=useState(false);const ref=useRef<number|undefined>(undefined);useEffect(()=>{if(running)ref.current=window.setInterval(()=>setSeconds(s=>{if(s<=1){setRunning(false);navigator.vibrate?.([200,100,200]);return 0}return s-1}),1000);return()=>window.clearInterval(ref.current)},[running]);const display=`${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;return <div className="timer"><small>DESCANSO</small><b>{display}</b><div className="timer-presets">{[60,90,120].map(x=><button key={x} onClick={()=>{setSeconds(x);setRunning(false)}}>{x}s</button>)}</div><button onClick={()=>setRunning(x=>!x)}>{running?"Pausar":"Iniciar"}</button><button onClick={()=>{setRunning(false);setSeconds(initial)}}>Reiniciar</button></div>}
-function InfoModal({exercise,close}:{exercise:Exercise;close:()=>void}){useEffect(()=>{const f=(e:KeyboardEvent)=>e.key==="Escape"&&close();window.addEventListener("keydown",f);return()=>window.removeEventListener("keydown",f)},[close]);return <div className="overlay" onMouseDown={close}><div className="modal" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={close}>×</button><small>TÉCNICA</small><h2>{exercise.name}</h2><p>{exercise.instructions}</p><p><b>Series:</b> {exercise.sets} · <b>Repeticiones:</b> {exercise.reps}</p></div></div>}
+function Timer({initial}:{initial:number}){const [seconds,setSeconds]=useState(initial);const [running,setRunning]=useState(false);const ref=useRef<number|undefined>(undefined);useEffect(()=>{if(running)ref.current=window.setInterval(()=>setSeconds(s=>{if(s<=1){setRunning(false);navigator.vibrate?.([200,100,200]);return 0}return s-1}),1000);return()=>window.clearInterval(ref.current)},[running]);const display=`${String(Math.floor(seconds/60)).padStart(2,"0")}:${String(seconds%60).padStart(2,"0")}`;return <div className="timer">
+<small>DESCANSO</small>
+<b>{display}</b>
+<div className="timer-presets">{[60,90,120].map(x=>
+<button key={x} onClick={()=>{setSeconds(x);setRunning(false)}}>{x}s</button>)}</div>
+<button onClick={()=>setRunning(x=>!x)}>{running?"Pausar":"Iniciar"}</button>
+<button onClick={()=>{setRunning(false);setSeconds(initial)}}>Reiniciar</button>
+</div>}
+function InfoModal({exercise,close}:{exercise:Exercise;close:()=>void}){useEffect(()=>{const f=(e:KeyboardEvent)=>e.key==="Escape"&&close();window.addEventListener("keydown",f);return()=>window.removeEventListener("keydown",f)},[close]);return <div className="overlay" onMouseDown={close}>
+<div className="modal" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}>
+<button className="close" onClick={close}>×</button>
+<small>TÉCNICA</small>
+<h2>{exercise.name}</h2>
+<p>{exercise.instructions}</p>
+<p>
+<b>Series:</b> {exercise.sets} · <b>Repeticiones:</b> {exercise.reps}</p>
+</div>
+</div>}
 
-function Progress({data,update}:{data:AppData;update:(p:Partial<AppData>)=>void}){const [form,setForm]=useState(false);const [m,setM]=useState({date:localISO(),weight:"",fat:"",muscle:"",bone:"",water:""});const sorted=[...data.measurements].sort((a,b)=>a.date.localeCompare(b.date));const latest=sorted[sorted.length-1];const first=sorted[0];const add=()=>{if(!m.weight)return;update({measurements:[...data.measurements,{id:uid(),date:m.date,weight:Number(m.weight),fat:m.fat?Number(m.fat):undefined,muscle:m.muscle?Number(m.muscle):undefined,bone:m.bone?Number(m.bone):undefined,water:m.water?Number(m.water):undefined}]});setForm(false)};
- return <section className="page"><div className="title-row"><div><small>PROGRESO</small><h1>Tu composición corporal</h1><p>Registra siempre la báscula en condiciones parecidas para comparar tendencias.</p></div><button className="primary" onClick={()=>setForm(!form)}>+ Añadir medición</button></div>{form&&<div className="measurement-form body-form"><label>Fecha<input type="date" value={m.date} onChange={e=>setM({...m,date:e.target.value})}/></label><label>Peso (kg)<input type="number" step="0.1" value={m.weight} onChange={e=>setM({...m,weight:e.target.value})}/></label><label>Grasa (%)<input type="number" step="0.1" value={m.fat} onChange={e=>setM({...m,fat:e.target.value})}/></label><label>Músculo (%)<input type="number" step="0.1" value={m.muscle} onChange={e=>setM({...m,muscle:e.target.value})}/></label><label>Masa ósea (%)<input type="number" step="0.1" value={m.bone} onChange={e=>setM({...m,bone:e.target.value})}/></label><label>Agua (%)<input type="number" step="0.1" value={m.water} onChange={e=>setM({...m,water:e.target.value})}/></label><button className="primary" onClick={add}>Guardar</button></div>} {latest?<><div className="progress-cards body-cards"><ProgressCard label="Peso" value={latest.weight} unit="kg" change={first?latest.weight-first.weight:0}/><ProgressCard label="Grasa corporal" value={latest.fat} unit="%" change={first&&latest.fat!=null&&first.fat!=null?latest.fat-first.fat:undefined}/><ProgressCard label="Masa muscular" value={latest.muscle} unit="%" change={first&&latest.muscle!=null&&first.muscle!=null?latest.muscle-first.muscle:undefined}/><ProgressCard label="Masa ósea" value={latest.bone} unit="%" change={first&&latest.bone!=null&&first.bone!=null?latest.bone-first.bone:undefined}/><ProgressCard label="Agua corporal" value={latest.water} unit="%" change={first&&latest.water!=null&&first.water!=null?latest.water-first.water:undefined}/></div><article className="chart-card"><div className="section-head"><h2>Evolución del peso</h2><span>{sorted.length} mediciones</span></div><Trend values={sorted.map(x=>x.weight)} labels={sorted.map(x=>new Date(`${x.date}T12:00`).toLocaleDateString("es-ES",{day:"numeric",month:"short"}))}/><div className="history-list">{[...sorted].reverse().map(x=><div key={x.id}><span>{new Date(`${x.date}T12:00`).toLocaleDateString("es-ES")}</span><b>{x.weight} kg · {x.fat??"—"}% grasa · {x.muscle??"—"}% músculo · {x.bone??"—"}% óseo · {x.water??"—"}% agua</b><button onClick={()=>update({measurements:data.measurements.filter(y=>y.id!==x.id)})}>Eliminar</button></div>)}</div></article></>:<div className="empty-state"><h2>Aún no hay mediciones</h2><p>Añade la primera para empezar a ver una tendencia real.</p></div>}</section>}
-function ProgressCard({label,value,unit,change}:{label:string;value?:number;unit:string;change?:number}){return <article><small>{label}</small><b>{value??"—"} <i>{value!=null?unit:""}</i></b><span>{change==null?"Sin comparación":`${change>0?"+":""}${change.toFixed(1)} ${unit} desde el inicio`}</span></article>}
-function Trend({values,labels}:{values:number[];labels:string[]}){if(values.length<2)return <div className="chart one">Añade otra medición para ver la gráfica.</div>;const min=Math.min(...values)-.3,max=Math.max(...values)+.3;const pts=values.map((v,i)=>`${(i/(values.length-1))*100},${90-((v-min)/(max-min))*75}`).join(" ");return <div className="real-chart"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={pts}/>{values.map((v,i)=><circle key={i} cx={(i/(values.length-1))*100} cy={90-((v-min)/(max-min))*75} r="1.4"/>)}</svg><div className="axis">{labels.map((x,i)=><span key={i}>{x}</span>)}</div></div>}
+function Progress({data,update}:{data:AppData;update:(p:Partial<AppData>)=>void}){const empty={date:localISO(),weight:"",fat:"",muscle:"",bone:"",water:""};const [form,setForm]=useState(false),[editId,setEditId]=useState<string|null>(null),[metric,setMetric]=useState<keyof Measurement>("weight");const [m,setM]=useState(empty);const sorted=[...data.measurements].sort((a,b)=>a.date.localeCompare(b.date));const latest=sorted[sorted.length-1];const first=sorted[0];const add=()=>{const weight=Number(m.weight),percentages=[m.fat,m.muscle,m.bone,m.water].filter(Boolean).map(Number);if(!m.date||weight<=0||percentages.some(x=>x<0||x>100))return;const value:Measurement={id:editId||uid(),date:m.date,weight,fat:m.fat?Number(m.fat):undefined,muscle:m.muscle?Number(m.muscle):undefined,bone:m.bone?Number(m.bone):undefined,water:m.water?Number(m.water):undefined};const rest=data.measurements.filter(x=>x.id!==editId&&x.date!==m.date);update({measurements:[...rest,value]});setForm(false);setEditId(null);setM(empty)};const edit=(x:Measurement)=>{setM({date:x.date,weight:String(x.weight),fat:x.fat==null?"":String(x.fat),muscle:x.muscle==null?"":String(x.muscle),bone:x.bone==null?"":String(x.bone),water:x.water==null?"":String(x.water)});setEditId(x.id);setForm(true)};
+ return <section className="page">
+<div className="title-row">
+<div>
+<small>PROGRESO</small>
+<h1>Tu composición corporal</h1>
+<p>Registra siempre la báscula en condiciones parecidas para comparar tendencias.</p>
+</div>
+<button className="primary" onClick={()=>{setForm(!form);setEditId(null);setM(empty)}}>+ Añadir medición</button>
+</div>{form&&<div className="measurement-form body-form">
+<label>Fecha<input type="date" value={m.date} onChange={e=>setM({...m,date:e.target.value})}/>
+</label>
+<label>Peso (kg)<input type="number" min="1" step="0.1" value={m.weight} onChange={e=>setM({...m,weight:e.target.value})}/>
+</label>
+<label>Grasa (%)<input type="number" min="0" max="100" step="0.1" value={m.fat} onChange={e=>setM({...m,fat:e.target.value})}/>
+</label>
+<label>Músculo (%)<input type="number" min="0" max="100" step="0.1" value={m.muscle} onChange={e=>setM({...m,muscle:e.target.value})}/>
+</label>
+<label>Masa ósea (%)<input type="number" min="0" max="100" step="0.1" value={m.bone} onChange={e=>setM({...m,bone:e.target.value})}/>
+</label>
+<label>Agua (%)<input type="number" min="0" max="100" step="0.1" value={m.water} onChange={e=>setM({...m,water:e.target.value})}/>
+</label>
+<button className="primary" onClick={add}>Guardar</button>
+</div>} {latest?<>
+<div className="progress-cards body-cards">
+<ProgressCard label="Peso" value={latest.weight} unit="kg" change={first?latest.weight-first.weight:0}/>
+<ProgressCard label="Grasa corporal" value={latest.fat} unit="%" change={first&&latest.fat!=null&&first.fat!=null?latest.fat-first.fat:undefined}/>
+<ProgressCard label="Masa muscular" value={latest.muscle} unit="%" change={first&&latest.muscle!=null&&first.muscle!=null?latest.muscle-first.muscle:undefined}/>
+<ProgressCard label="Masa ósea" value={latest.bone} unit="%" change={first&&latest.bone!=null&&first.bone!=null?latest.bone-first.bone:undefined}/>
+<ProgressCard label="Agua corporal" value={latest.water} unit="%" change={first&&latest.water!=null&&first.water!=null?latest.water-first.water:undefined}/>
+</div>
+<article className="chart-card">
+<div className="section-head">
+<h2>Evolución <select value={String(metric)} onChange={e=>setMetric(e.target.value as keyof Measurement)}><option value="weight">del peso</option><option value="fat">de la grasa</option><option value="muscle">del músculo</option><option value="bone">de la masa ósea</option><option value="water">del agua</option></select></h2>
+<span>{sorted.length} mediciones</span>
+</div>
+<Trend values={sorted.map(x=>Number(x[metric])).filter(Number.isFinite)} labels={sorted.filter(x=>Number.isFinite(Number(x[metric]))).map(x=>new Date(`${x.date}T12:00`).toLocaleDateString("es-ES",{day:"numeric",month:"short"}))}/>
+<div className="history-list">{[...sorted].reverse().map(x=>
+<div key={x.id}>
+<span>{new Date(`${x.date}T12:00`).toLocaleDateString("es-ES")}</span>
+<b>{x.weight} kg · {x.fat??"—"}% grasa · {x.muscle??"—"}% músculo · {x.bone??"—"}% óseo · {x.water??"—"}% agua</b>
+<button onClick={()=>edit(x)}>Editar</button>
+<button onClick={()=>update({measurements:data.measurements.filter(y=>y.id!==x.id)})}>Eliminar</button>
+</div>)}</div>
+</article>
+</>:<div className="empty-state">
+<h2>Aún no hay mediciones</h2>
+<p>Añade la primera para empezar a ver una tendencia real.</p>
+</div>}</section>}
+function ProgressCard({label,value,unit,change}:{label:string;value?:number;unit:string;change?:number}){return <article>
+<small>{label}</small>
+<b>{value??"—"} <i>{value!=null?unit:""}</i>
+</b>
+<span>{change==null?"Sin comparación":`${change>0?"+":""}${change.toFixed(1)} ${unit} desde el inicio`}</span>
+</article>}
+function Trend({values,labels}:{values:number[];labels:string[]}){if(values.length<2)return <div className="chart one">Añade otra medición para ver la gráfica.</div>;const min=Math.min(...values)-.3,max=Math.max(...values)+.3;const pts=values.map((v,i)=>`${(i/(values.length-1))*100},${90-((v-min)/(max-min))*75}`).join(" ");return <div className="real-chart">
+<svg viewBox="0 0 100 100" preserveAspectRatio="none">
+<polyline points={pts}/>{values.map((v,i)=>
+<circle key={i} cx={(i/(values.length-1))*100} cy={90-((v-min)/(max-min))*75} r="1.4"/>)}</svg>
+<div className="axis">{labels.map((x,i)=>
+<span key={i}>{x}</span>)}</div>
+</div>}
 
 function SettingsPage({data,update,notify}:{data:AppData;update:(p:Partial<AppData>)=>void;notify:(s:string)=>void}){const s=data.settings;const file=useRef<HTMLInputElement>(null);const set=(p:Partial<Settings>)=>update({settings:{...s,...p}});const nutrition=(p:Partial<Settings>)=>{const settings={...s,...p};update({settings,dayMeals:adaptWeek(data,settings)})};const download=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`equilibra-copia-${localISO()}.json`;a.click();URL.revokeObjectURL(a.href)};const restore=(f?:File)=>{if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(String(r.result));setDataSafe(x,update);notify("Copia restaurada")}catch{notify("El archivo no es válido")}};r.readAsText(f)};
- return <section className="page"><div className="title-row"><div><small>AJUSTES</small><h1>Tu Equilibra</h1><p>Al cambiar calorías o proteína, el menú de la semana actual se recalcula.</p></div></div><div className="settings-grid"><article><h2>Perfil y objetivos diarios</h2><label>Nombre<input value={s.name} onChange={e=>set({name:e.target.value})}/></label><label>Calorías (kcal)<input type="number" min="1200" value={s.calorieGoal} onChange={e=>nutrition({calorieGoal:Number(e.target.value)})}/></label><label>Proteína (g)<input type="number" min="1" value={s.proteinGoal} onChange={e=>nutrition({proteinGoal:Number(e.target.value)})}/></label><div className="settings-note">Las raciones y meriendas se ajustan automáticamente hasta donde permita tu presupuesto semanal, respetando las comidas fuera ya marcadas.</div><label>Carbohidratos (g)<input type="number" min="1" value={s.carbGoal} onChange={e=>set({carbGoal:Number(e.target.value)})}/></label><label>Grasas (g)<input type="number" min="1" value={s.fatGoal} onChange={e=>set({fatGoal:Number(e.target.value)})}/></label><label>Presupuesto semanal (€)<input type="number" min="1" value={s.weeklyBudget} onChange={e=>set({weeklyBudget:Number(e.target.value)})}/></label><label>Presupuesto mensual (€)<input type="number" min="1" value={s.monthlyBudget} onChange={e=>set({monthlyBudget:Number(e.target.value)})}/></label><label>Descanso predeterminado (s)<input type="number" min="15" value={s.restSeconds} onChange={e=>set({restSeconds:Number(e.target.value)})}/></label></article><article><h2>Apariencia y datos</h2><label className="toggle"><input type="checkbox" checked={s.dark} onChange={e=>set({dark:e.target.checked})}/> Modo oscuro</label><p className="muted">Tus datos se guardan únicamente en este navegador. Crea una copia antes de borrar datos o cambiar de dispositivo.</p><button className="secondary" onClick={download}>Descargar copia de seguridad</button><button className="secondary" onClick={()=>file.current?.click()}>Restaurar copia</button><input ref={file} hidden type="file" accept="application/json" onChange={e=>restore(e.target.files?.[0])}/></article></div></section>}
-function setDataSafe(x:Partial<AppData>,update:(p:Partial<AppData>)=>void){if(!x||typeof x!=="object"||!Array.isArray(x.sessions)||!x.settings)throw new Error();update({...defaults,...x,settings:{...defaults.settings,...x.settings}})}
+ return <section className="page">
+<div className="title-row">
+<div>
+<small>AJUSTES</small>
+<h1>Tu Equilibra</h1>
+<p>Al cambiar calorías o proteína, el menú de la semana actual se recalcula.</p>
+</div>
+</div>
+<div className="settings-grid">
+<article>
+<h2>Perfil y objetivos diarios</h2>
+<label>Nombre<input value={s.name} onChange={e=>set({name:e.target.value})}/>
+</label>
+<label>Calorías (kcal)<input type="number" min="1200" value={s.calorieGoal} onChange={e=>nutrition({calorieGoal:Number(e.target.value)})}/>
+</label>
+<label>Proteína (g)<input type="number" min="1" value={s.proteinGoal} onChange={e=>nutrition({proteinGoal:Number(e.target.value)})}/>
+</label>
+<div className="settings-note">Las cantidades de los ingredientes y las meriendas se ajustan automáticamente, respetando las ediciones manuales y las comidas fuera.</div>
+<label>Carbohidratos (g)<input type="number" min="1" value={s.carbGoal} onChange={e=>set({carbGoal:Number(e.target.value)})}/>
+</label>
+<label>Grasas (g)<input type="number" min="1" value={s.fatGoal} onChange={e=>set({fatGoal:Number(e.target.value)})}/>
+</label>
+<label>Presupuesto semanal (€)<input type="number" min="1" value={s.weeklyBudget} onChange={e=>set({weeklyBudget:Number(e.target.value)})}/>
+</label>
+<label>Presupuesto mensual (€)<input type="number" min="1" value={s.monthlyBudget} onChange={e=>set({monthlyBudget:Number(e.target.value)})}/>
+</label>
+<label>Descanso predeterminado (s)<input type="number" min="15" value={s.restSeconds} onChange={e=>set({restSeconds:Number(e.target.value)})}/>
+</label>
+</article>
+<article>
+<h2>Apariencia y datos</h2>
+<label className="toggle">
+<input type="checkbox" checked={s.dark} onChange={e=>set({dark:e.target.checked})}/> Modo oscuro</label>
+<p className="muted">Tus datos se guardan únicamente en este navegador. Crea una copia antes de borrar datos o cambiar de dispositivo.</p>
+<button className="secondary" onClick={download}>Descargar copia de seguridad</button>
+<button className="secondary" onClick={()=>file.current?.click()}>Restaurar copia</button>
+<input ref={file} hidden type="file" accept="application/json" onChange={e=>restore(e.target.files?.[0])}/>
+</article>
+</div>
+</section>}
+function setDataSafe(x:Partial<AppData>,update:(p:Partial<AppData>)=>void){if(!x||typeof x!=="object"||!Array.isArray(x.sessions)||!Array.isArray(x.measurements)||!x.settings||typeof x.dayMeals!=="object")throw new Error();update(migrate(x))}
